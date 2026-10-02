@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { ConversationService } from '../services/conversation.service';
 import { MessageService } from '../services/message.service';
+import { WhatsAppService } from '../services/whatsapp.service';
+import { NLPService } from '../services/nlp';
 import { config } from '../config/environment';
 
 export const verifyWebhook = (req: Request, res: Response) => {
@@ -9,54 +11,70 @@ export const verifyWebhook = (req: Request, res: Response) => {
   const challenge = req.query['hub.challenge'];
 
   if (mode === 'subscribe' && token === config.whatsapp.verifyToken) {
-    console.log('✅ Webhook verified');
     res.status(200).send(challenge);
   } else {
-    console.log('❌ Webhook verification failed');
     res.sendStatus(403);
   }
 };
 
 export const receiveMessage = async (req: Request, res: Response) => {
+  const startTime = Date.now();
+  
   try {
-    const entry = req.body.entry?.[0];
-    const change = entry?.changes?.[0];
-    const value = change?.value;
-    const message = value?.messages?.[0];
-
-    if (!message) {
-      console.log('📭 No message in webhook payload');
-      return res.sendStatus(200);
-    }
+    const message = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+    if (!message) return res.sendStatus(200);
 
     const from = message.from;
     const text = message.text?.body || '';
-    const messageType = message.type || 'text';
 
-    console.log('📨 Incoming WhatsApp message:', {
-      from,
-      type: messageType,
-      content: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
-      timestamp: new Date().toISOString()
-    });
+    console.log('\n' + '='.repeat(60));
+    console.log(`📨 INCOMING [${new Date().toISOString()}]`);
+    console.log(`From: ${from}`);
+    console.log(`Message: "${text}"`);
+    console.log('-'.repeat(60));
 
-    // ==== DATABASE PERSISTENCE ====
-    // 1. Find or create conversation
+    // Database persistence
     const conversation = await ConversationService.findOrCreate(from);
-    
-    // 2. Save the message
     await MessageService.create({
       conversation_id: conversation.id,
       sender: from,
-      message_type: messageType,
       content: text,
       raw_payload: message
     });
-    // ==== END DATABASE PERSISTENCE ====
 
-    // TODO: NLP processing will go here
-    // TODO: Automation rules will go here
-    // TODO: Fintech actions will go here
+    // NLP Extraction
+    const nlpResult = await NLPService.extract(text);
+    console.log(NLPService.explain(nlpResult));
+
+    // Generate response based on intent
+    const responseText = WhatsAppService.formatFintechResponse(
+      nlpResult.intent.intent,
+      {
+        amount: nlpResult.entities.amount?.[0]?.normalized,
+        currency: nlpResult.entities.currency?.[0]?.value || 'ETB',
+        account: nlpResult.entities.account_type?.[0]?.value,
+        confidence: nlpResult.confidence
+      }
+    );
+
+    // Send reply
+    await WhatsAppService.sendTypingIndicator(from);
+    await WhatsAppService.sendMessage(from, responseText);
+
+    // Save bot response
+    await MessageService.create({
+      conversation_id: conversation.id,
+      sender: 'bot',
+      content: responseText,
+      raw_payload: { 
+        intent: nlpResult.intent,
+        processing_time: Date.now() - startTime 
+      }
+    });
+
+    console.log('-'.repeat(60));
+    console.log(`✅ COMPLETE | Time: ${Date.now() - startTime}ms`);
+    console.log('='.repeat(60) + '\n');
 
     res.sendStatus(200);
     

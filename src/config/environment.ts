@@ -16,18 +16,19 @@ export const config = {
   
   whatsapp: {
     verifyToken: process.env.WHATSAPP_VERIFY_TOKEN,
+    phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
+    accessToken: process.env.WHATSAPP_ACCESS_TOKEN,
+    mockMode: process.env.WHATSAPP_MOCK_MODE === 'true',
   },
 };
 
-// Validate required environment variables
-const requiredEnvVars = [
-  'DB_HOST', 'DB_PORT', 'DB_USER', 'DB_PASSWORD', 'DB_NAME',
-  'WHATSAPP_VERIFY_TOKEN'
-];
-
-requiredEnvVars.forEach(envVar => {
-  if (!process.env[envVar]) {
-    console.error(`❌ Missing required environment variable: ${envVar}`);
-    process.exit(1);
-  }
-});
+// Validate production credentials if mock mode is off
+if (!config.whatsapp.mockMode) {
+  const required = ['WHATSAPP_PHONE_NUMBER_ID', 'WHATSAPP_ACCESS_TOKEN'];
+  required.forEach(envVar => {
+    if (!process.env[envVar]) {
+      console.error(`❌ Production WhatsApp requires: ${envVar}`);
+      process.exit(1);
+    }
+  });
+}
