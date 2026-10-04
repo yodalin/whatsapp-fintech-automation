@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import pool from '../config/database';
+import { pool } from '../config/database';
 
 export const getConversations = async (req: Request, res: Response) => {
   try {
@@ -20,7 +20,7 @@ export const getConversations = async (req: Request, res: Response) => {
       data: result.rows
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : String(error) });
   }
 };
 
@@ -40,6 +40,6 @@ export const getMessages = async (req: Request, res: Response) => {
       data: result.rows
     });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : String(error) });
   }
 };
